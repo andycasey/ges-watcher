@@ -205,6 +205,13 @@ if __name__ == "__main__":
     for folder in FOLDERS_TO_WATCH:
 
         path = folder["path"]
+
+        if path not in full_inventory:
+            logging.warn("A new folder has been added and no inventory exists:"\
+                " {0} -- you should have constructed a totally new inventory!"
+                .format(path))
+            full_inventory[path] = []
+
         current_inventory = create_inventory(path)
         new_files = new_file_inventory(full_inventory[path], current_inventory)
 
