@@ -177,6 +177,8 @@ def email_report(recipients, contents, subject="Automated FITS-checker report"):
 
 if __name__ == "__main__":
 
+    # Usage: python run.py
+
     # Create an initial inventory if none exists.
     if not os.path.exists(INVENTORY_FILENAME):
         logging.info("No previous inventory file found at {}. Creating one and "
