@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/opt/ioa/software/python/2.7.8/bin/python
 
 """ Watch for new GES FITS files and check them for validity """
 
@@ -10,28 +10,299 @@ import fnmatch
 import logging
 import os
 import smtplib
+import subprocess
 import sys
 import textwrap
 import time
 import yaml
+from email.mime.application import MIMEApplication
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from getpass import getuser
 from glob import glob
 
-GES_ADMINISTRATORS = ["arc@ast.cam.ac.uk"]
+FITSCHECKER = "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/FITSChecker/run_fitschecker.sh"
+GES_ADMINISTRATORS = ["arc@ast.cam.ac.uk", ]#"ccworley@ast.cam.ac.uk"]
 INVENTORY_FILENAME = "/data/arc/codes/ges-watcher/inventory.yaml"
 FOLDERS_TO_WATCH = [
     {
-        "path": "/data/arc/research/globular-clusters/",
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG12/Arcetri",
         "owners": [
-            "andycasey@gmail.com"
+            "A. Casey <andycasey@gmail.com>",
+            #"Elena Franciosini <francio@arcetri.astro.it>"
         ]
-    }
-
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG11/CAUP",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Sergio Sousa <sousasag@astro.up.pt>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG12/CAUP",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Sergio Sousa <sousasag@astro.up.pt>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG11/Concepcion",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Sandro Villanova <svillanova@astro-udec.cl>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG10/EPINARBO",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Laura Magrini <laura@arcetri.astro.it>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG11/EPINARBO",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Laura Magrini <laura@arcetri.astro.it>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG10/IAC",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Carlos Allende-Prieto <callende@iac.es>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG11/IACAIP",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Carlos Allende-Prieto <callende@iac.es>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG10/Lumba",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Karin Lind <klind@ast.cam.ac.uk>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG11/Lumba",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Greg Ruchti <greg@astro.lu.se>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG10/MaxPlanck",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Maria Bergemann <bergemann@mpia-hd.mpg.de>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG11/MaxPlanck",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Maria Bergemann <bergemann@mpia-hd.mpg.de>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG11/MyGIsFOS",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Luca Sbordone <lsbordon@lsw.uni-heidelberg.de>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG10/Nice",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Alejandra Recio-Blanco <alejandra.recio-blanco@oca.eu>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG11/Nice",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Clare Worley <ccworley@ast.cam.ac.uk>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG10/OACT",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Antonio Frasca <antonio.frasca@oact.inaf.it>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG11/OACT",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Antonio Frasca <antonio.frasca@oact.inaf.it>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG12/OACT",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Alessandro Lanzafame <a.lanzafame@unict.it>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG12/OAPA",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Francesco Damiani <damiani@astropa.unipa.it>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG10/Potsdam",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Marica Valentini <mvalentini@aip.de>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG11/Potsdam",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Marica Valentini <mvalentini@aip.de>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG11/UCM",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Hugo Tabernero <htabernero@ucm.es>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG12/UCM",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Hugo Tabernero <htabernero@ucm.es>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG10/ULB",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Sophie VanEck <svaneck@astro.ulb.ac.be>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG11/ULB",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Sophie VanEck <svaneck@astro.ulb.ac.be>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG11/Vilnius",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Grazina Tautvaisiene <grazina.tautvaisiene@tfai.vu.lt>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG13/??1",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Fabrice Martins <fabrice.martins@univ-montp2.fr>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG13/??2",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Andrew Tkachenko <Andrew.Tkachenko@ster.kuleuven.be>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG13/IAC",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Artemio Herrero <ahd@iac.es>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG13/Liege",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Thierry Morel <morel@astro.ulg.ac.be>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG13/ROB",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Alex Lobel <alex.lobel@oma.be>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG13/ROBGrid",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Ronny Blomme <Ronny.Blomme@oma.be>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG14/PerSpectra",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Sophie VanEck <svaneck@astro.ulb.ac.be>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG10/Recommended",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Alejandra Recio-Blanco <alejandra.recio-blanco@oca.eu>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG11/Recommended",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Rodolfo Smiljanic <rsmiljanic@ncac.torun.pl>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG12/Recommended",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Alessandro Lanzafame <a.lanzafame@unict.it>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG13/Recommended",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Ronny Blomme <Ronny.Blomme@oma.be>"
+        ]
+    },
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG14/Recommended",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Sophie VanEck <svaneck@astro.ulb.ac.be>"
+        ]
+    },
+    {
+        # [TODO] This folder does not exist!
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG15/Recommended",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Patrick Francois <patrick.francois@obspm.fr>"
+        ]
+    },
 ]
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s",
-    level=logging.DEBUG)
+    level=logging.DEBUG, filename=os.path.join(os.path.dirname(__file__), "iDR4.log"))
 
 def create_inventory(folder, filter_by="*.fits"):
     """
@@ -154,7 +425,8 @@ def modified_file_inventory(previous_inventory, current_inventory):
     return modified_inventory
 
 
-def email_report(recipients, contents, subject="Automated FITS-checker report"):
+def email_report(recipients, contents, subject="Automated FITS-checker report",
+    attachments=None):
     """
     Send the FITS checker report.
     """
@@ -162,11 +434,22 @@ def email_report(recipients, contents, subject="Automated FITS-checker report"):
     if isinstance(recipients, str):
         recipients = [recipients]
 
+    if attachments is not None:
+        assert isinstance(attachments, (list, tuple))
+
     sender = "{0}@ast.cam.ac.uk".format(getuser())
-    message = MIMEText(contents)
-    message["Subject"] = subject
+    message = MIMEMultipart()
     message["From"] = sender
     message["To"] = ", ".join(recipients)
+    message["CC"] = ", ".join(GES_ADMINISTRATORS)
+    message["Subject"] = subject
+    message.attach(MIMEText(contents))
+
+    for filename in attachments or []:
+        with open(filename, "rb") as fp:
+            message.attach(MIMEApplication(fp.read(),
+                Content_Disposition='attachment; filename="{}"'.format(
+                    os.path.basename(filename))))
 
     server = smtplib.SMTP("localhost")
     server.sendmail(sender, recipients, message.as_string())
@@ -201,9 +484,12 @@ if __name__ == "__main__":
     # Load the previous inventory
     with open(INVENTORY_FILENAME, "r") as fp:
         full_inventory = yaml.load(fp)
+        if full_inventory is None:
+            full_inventory = {}
     logging.info("Loaded inventory from {0}".format(INVENTORY_FILENAME))
 
     # Check for updates in all folders.
+    total_updated_files = 0
     for folder in FOLDERS_TO_WATCH:
 
         path = folder["path"]
@@ -221,33 +507,78 @@ if __name__ == "__main__":
             current_inventory)
 
         # Append to some message logger
-        logging.info("Found {0} new FITS file(s) and {1} modified file(s) in {2}"
-            .format(len(new_files), len(modified_files), path))
+        if len(new_files) * len(modified_files) > 0:
+            logging.info("Found {0} new FITS file(s) and {1} modified file(s) "
+                "in {2}".format(len(new_files), len(modified_files), path))
 
         # Run the script(s) on the new/modified files and grab the output.
+        all_updated_files = new_files + modified_files
+        total_updated_files += len(all_updated_files)
+        fitschecker_log_files = []
+        for filename, created, modified in all_updated_files:
+
+            # [TODO] Should we wait to make sure this file is not still
+            # downloading?
+
+            logging.info("Running FITSCHECKER on {0}".format(filename))
+            try:
+                #result = os.system(FITSCHECKER)
+                result = subprocess.call(FITSCHECKER,
+                    cwd=os.path.dirname(FITSCHECKER),
+                    env={
+                        "filepath": filename,
+                    },
+                    shell=True)
+
+            except Exception as e:
+                logging.exception("Exception in running FITSCHECKER on {0}"\
+                    .format(filename))
+
+                # Yo, email andy!
+                return_code, return_message = email_report(["arc@ast.cam.ac.uk"],
+                    "Yo, something went wrong with FITSCHECKER: {}".format(e),
+                    subject="Error in FITSCHECKER")
+                logging.info("Emailed error to Andy. Return code and message:"
+                    "\n{0}: {1}".format(return_code, return_message))
+
+            else:
+                logging.info("FITSCHECKER finished on {0} with result {1}"\
+                    .format(filename, result))
 
         # Send an email if there is anything to report.
         if len(new_files) > 0 or len(modified_files) > 0:
 
-            contents = textwrap.dedent(
-                """
-                Found {0} new FITS file(s) and {1} modified file(s) in {2}:
+            contents = textwrap.dedent("""\
+                Dear {5},
+                
+                I have found {0} new FITS file(s) and {1} modified file(s) in the {2} Dropbox folder, which is owned by you:
 
                 New files:
                     {3}
 
                 Modified files:
                     {4}
-                """.format(len(new_files), len(modified_files), path,
-                    "\n\t".join([e[0] for e in new_files]),
-                    "\n\t".join([e[0] for e in modified_files])))
-            recipients = folder["owners"] + GES_ADMINISTRATORS
-            return_code, return_message = email_report(recipients, contents)
+
+                FITSCHECKER has been run on the updated file(s) and the logs files are attached with this email.""".format(
+                    len(new_files), len(modified_files),
+                    path.split("/")[-1],
+                    "\n                    ".join([e[0][len(path)+1:] for e in new_files]),
+                    "\n                    ".join([e[0][len(path)+1:] for e in modified_files]),
+                    ", ".join([_.split(" <")[0] for _ in folder["owners"]])
+                    ))
+
+            # [TODO] Attach the logs
+            # [TODO] Grep the logs for INVALID, and mention this in the email contents
+
+            return_code, return_message = email_report(folder["owners"], contents,
+                attachments=fitschecker_log_files)
             logging.info("Email return code and message was {0} {1}".format(
                 return_code, return_message))
 
         # Update the existing inventory
         full_inventory[path] = current_inventory
+
+    logging.info("There were {0} files updated.".format(total_updated_files))
 
     # Save the updated inventory
     n_folders = len(full_inventory)
