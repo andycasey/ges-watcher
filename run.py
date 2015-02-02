@@ -31,8 +31,8 @@ FITSCHECKER = "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/FITSChecker/run_fitsche
 FITSCHECKER_LOG_FORMAT = "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/FITSChecker"\
     "/Output/{basename}_FITSchecker_REPORT_{date}.log"
 GES_ADMINISTRATORS = [
-    "Andy Casey <arc@ast.cam.ac.uk>",
-    "Clare Worley <ccworley@ast.cam.ac.uk>"
+    "Andy Casey <andycasey@gmail.com>"
+    #"Clare Worley <ccworley@ast.cam.ac.uk>"
 ]
 INVENTORY_FILENAME = "/data/arc/codes/ges-watcher/inventory.yaml"
 
@@ -318,7 +318,7 @@ FOLDERS_TO_WATCH = [
     {
         "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG11/Nice",
         "owners": [
-            "A. Casey <andycasey@gmail.com>",
+            "A. Casey <andy@astrowizici.st>",
             #"Clare Worley <ccworley@ast.cam.ac.uk>"
         ]
     }
@@ -461,25 +461,25 @@ def email_report(recipients, contents, subject="Automated FITS-checker report",
     if attachments is not None:
         assert isinstance(attachments, (list, tuple))
 
+    to = recipients + GES_ADMINISTRATORS
     sender = "{0}@ast.cam.ac.uk".format(getuser())
     message = MIMEMultipart()
     message["From"] = sender
-    message["To"] = ", ".join(recipients + GES_ADMINISTRATORS)
+    message["To"] = ", ".join(to)
     message["Subject"] = subject
     message.attach(MIMEText(contents))
 
     for filename in attachments or []:
         with open(filename, "r") as fp:
-
             part = MIMEBase("applicaton", "octet-stream")
             part.set_payload(fp.read())
-            Encoders.encode_base64(part)
-            part.add_header('Content-Disposition', 'attachment; filename="{}.txt"'\
-                .format(os.path.splitext(os.path.basename(filename))[0]))
-            message.attach(part)
+        Encoders.encode_base64(part)
+        part.add_header('Content-Disposition', 'attachment; filename="{}.txt"'\
+            .format(os.path.splitext(os.path.basename(filename))[0]))
+        message.attach(part)
 
     server = smtplib.SMTP("localhost")
-    server.sendmail(sender, recipients, message.as_string())
+    server.sendmail(sender, to, message.as_string())
     code, message = server.quit()
 
     return (code, message)
