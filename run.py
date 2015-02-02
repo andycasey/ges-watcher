@@ -9,21 +9,34 @@ __author__ = "Andy Casey <arc@ast.cam.ac.uk>"
 import fnmatch
 import logging
 import os
+import re
+import shutil
 import smtplib
 import subprocess
 import sys
 import textwrap
 import time
 import yaml
+from datetime import datetime
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.MIMEBase import MIMEBase
+from email import Encoders
 from getpass import getuser
 from glob import glob
 
+
 FITSCHECKER = "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/FITSChecker/run_fitschecker.sh"
-GES_ADMINISTRATORS = ["arc@ast.cam.ac.uk", ]#"ccworley@ast.cam.ac.uk"]
+FITSCHECKER_LOG_FORMAT = "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/FITSChecker"\
+    "/Output/{basename}_FITSchecker_REPORT_{date}.log"
+GES_ADMINISTRATORS = [
+    "Andy Casey <arc@ast.cam.ac.uk>",
+    "Clare Worley <ccworley@ast.cam.ac.uk>"
+]
 INVENTORY_FILENAME = "/data/arc/codes/ges-watcher/inventory.yaml"
+
+
 FOLDERS_TO_WATCH = [
     {
         "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG12/Arcetri",
@@ -301,8 +314,19 @@ FOLDERS_TO_WATCH = [
     },
 ]
 
-logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s",
-    level=logging.DEBUG, filename=os.path.join(os.path.dirname(__file__), "iDR4.log"))
+FOLDERS_TO_WATCH = [
+    {
+        "path": "/data/gaia-eso/geswg15/GESIoA/iDR4PA/WG15/WG11/Nice",
+        "owners": [
+            "A. Casey <andycasey@gmail.com>",
+            #"Clare Worley <ccworley@ast.cam.ac.uk>"
+        ]
+    }
+]
+
+logging.basicConfig(level=logging.DEBUG, 
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    filename=os.path.join(os.path.dirname(__file__), "iDR4.log"))
 
 def create_inventory(folder, filter_by="*.fits"):
     """
@@ -440,16 +464,19 @@ def email_report(recipients, contents, subject="Automated FITS-checker report",
     sender = "{0}@ast.cam.ac.uk".format(getuser())
     message = MIMEMultipart()
     message["From"] = sender
-    message["To"] = ", ".join(recipients)
-    message["CC"] = ", ".join(GES_ADMINISTRATORS)
+    message["To"] = ", ".join(recipients + GES_ADMINISTRATORS)
     message["Subject"] = subject
     message.attach(MIMEText(contents))
 
     for filename in attachments or []:
-        with open(filename, "rb") as fp:
-            message.attach(MIMEApplication(fp.read(),
-                Content_Disposition='attachment; filename="{}"'.format(
-                    os.path.basename(filename))))
+        with open(filename, "r") as fp:
+
+            part = MIMEBase("applicaton", "octet-stream")
+            part.set_payload(fp.read())
+            Encoders.encode_base64(part)
+            part.add_header('Content-Disposition', 'attachment; filename="{}.txt"'\
+                .format(os.path.splitext(os.path.basename(filename))[0]))
+            message.attach(part)
 
     server = smtplib.SMTP("localhost")
     server.sendmail(sender, recipients, message.as_string())
@@ -489,7 +516,7 @@ if __name__ == "__main__":
     logging.info("Loaded inventory from {0}".format(INVENTORY_FILENAME))
 
     # Check for updates in all folders.
-    total_updated_files = 0
+    total_updated_files, num_invalids = 0, 0
     for folder in FOLDERS_TO_WATCH:
 
         path = folder["path"]
@@ -514,21 +541,30 @@ if __name__ == "__main__":
         # Run the script(s) on the new/modified files and grab the output.
         all_updated_files = new_files + modified_files
         total_updated_files += len(all_updated_files)
-        fitschecker_log_files = []
+        fitschecker_log_filenames = []
         for filename, created, modified in all_updated_files:
 
             # [TODO] Should we wait to make sure this file is not still
             # downloading?
 
+            # Check if a log file already exists?
+            fitschecker_log_filename = FITSCHECKER_LOG_FORMAT.format(
+                basename=os.path.splitext(os.path.basename(filename))[0],
+                date=datetime.now().strftime("%Y-%m-%d"))
+            if os.path.exists(fitschecker_log_filename):
+                logging.warn("FITSCHECKER log filename {} already exists!"\
+                    .format(fitschecker_log_filename))
+
             logging.info("Running FITSCHECKER on {0}".format(filename))
             try:
                 #result = os.system(FITSCHECKER)
-                result = subprocess.call(FITSCHECKER,
+                result = subprocess.Popen(FITSCHECKER,
                     cwd=os.path.dirname(FITSCHECKER),
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     env={
                         "filepath": filename,
                     },
-                    shell=True)
+                    shell=True, close_fds=True)
 
             except Exception as e:
                 logging.exception("Exception in running FITSCHECKER on {0}"\
@@ -542,16 +578,58 @@ if __name__ == "__main__":
                     "\n{0}: {1}".format(return_code, return_message))
 
             else:
-                logging.info("FITSCHECKER finished on {0} with result {1}"\
-                    .format(filename, result))
+                logging.info("FITSCHECKER finished on {0} with output:\n{1}"\
+                    .format(filename, result.stdout.read()))
+
+                if os.path.exists(fitschecker_log_filename):
+                    with open(fitschecker_log_filename, "r") as fp:
+                        _ = len(re.findall("INVALID", fp.read()))
+                        logging.warn("FITSCHECKER found {0} 'INVALID's in {1}"\
+                            .format(_, fitschecker_log_filename))
+                        num_invalids += _
+
+                    # Copy this log file to the correct path
+                    most_recent_fitschecker_log_filename = os.path.join(
+                            os.path.dirname(filename),
+                            "_".join(os.path.basename(fitschecker_log_filename).split("_")[:-1]) + ".log")
+                    try:
+                        shutil.copy(fitschecker_log_filename,
+                            most_recent_fitschecker_log_filename)
+                    except IOError:
+                        logging.exception("Failed to copy {0} to {1}".format(
+                            fitschecker_log_filename,
+                            most_recent_fitschecker_log_filename))
+
+                    else:
+                        logging.info("Copied {0} to {1}".format(
+                            fitschecker_log_filename,
+                            most_recent_fitschecker_log_filename))
+                    fitschecker_log_filenames.append(fitschecker_log_filename)
+
+                else:
+                    logging.warn("Could not find FITSCHECKER log file {0}"\
+                        .format(fitschecker_log_filename))
 
         # Send an email if there is anything to report.
         if len(new_files) > 0 or len(modified_files) > 0:
 
+            if num_invalids > 0:
+                invalid_str = ("There were {} serious errors reported by FITSCH"
+                    "ECKER for your file(s). These errors are marked with the w"
+                    "ord 'INVALID' in the attached log files, and need to be fi"
+                    "xed before your results can be used. Please examine the at"
+                    "tached files, identify and correct the errors in your FITS"
+                    " file(s), and update the version in your Dropbox.".format(
+                        num_invalids))
+            else:
+                invalid_str = ("There were no serious errors reported by FITSCH"
+                    "ECKER for your file(s). Thanks for following the FITS for"
+                    "mat.")
+
             contents = textwrap.dedent("""\
                 Dear {5},
                 
-                I have found {0} new FITS file(s) and {1} modified file(s) in the {2} Dropbox folder, which is owned by you:
+                I have found {0} new and {1} modified FITS file(s) in the {2} Dropbox folder, which is owned by you:
 
                 New files:
                     {3}
@@ -559,19 +637,22 @@ if __name__ == "__main__":
                 Modified files:
                     {4}
 
-                FITSCHECKER has been run on the updated file(s) and the logs files are attached with this email.""".format(
+                FITSCHECKER has been run on the updated file(s) and the logs files are attached with this email. {6}
+
+                Best wishes,
+                Andy Casey
+
+                """.format(
                     len(new_files), len(modified_files),
                     path.split("/")[-1],
                     "\n                    ".join([e[0][len(path)+1:] for e in new_files]),
                     "\n                    ".join([e[0][len(path)+1:] for e in modified_files]),
-                    ", ".join([_.split(" <")[0] for _ in folder["owners"]])
-                    ))
+                    ", ".join([_.split(" <")[0] for _ in folder["owners"]]),
+                    invalid_str))
 
-            # [TODO] Attach the logs
             # [TODO] Grep the logs for INVALID, and mention this in the email contents
-
             return_code, return_message = email_report(folder["owners"], contents,
-                attachments=fitschecker_log_files)
+                attachments=fitschecker_log_filenames)
             logging.info("Email return code and message was {0} {1}".format(
                 return_code, return_message))
 
