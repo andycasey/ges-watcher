@@ -406,14 +406,17 @@ def email_report(recipients, contents, subject="Automated FITS-checker report",
     Send the FITS checker report.
     """
 
-    if SEND_EMAILS:
-        return (0, "This is a *dry run* -- no emails actually sent.")
-
     if isinstance(recipients, str):
         recipients = [recipients]
 
     if attachments is not None:
         assert isinstance(attachments, (list, tuple))
+
+    logging.debug("Sending the following email to {0}:\n{1}\n"
+        "With attachments {2}".format(recipients, contents, attachments))
+
+    if SEND_EMAILS:
+        return (0, "This is a *dry run* -- no emails actually sent.")
 
     to = recipients + GES_ADMINISTRATORS
     sender = "{0}@ast.cam.ac.uk".format(getuser())
@@ -435,6 +438,8 @@ def email_report(recipients, contents, subject="Automated FITS-checker report",
     server = smtplib.SMTP("localhost")
     server.sendmail(sender, to, message.as_string())
     code, message = server.quit()
+
+    logging.info("Return code and message {0}: {1}".format(code, message))
 
     return (code, message)
 
@@ -537,8 +542,6 @@ if __name__ == "__main__":
                 return_code, return_message = email_report(["arc@ast.cam.ac.uk"],
                     "Yo, something went wrong with FITSCHECKER: {}".format(e),
                     subject="Error in FITSCHECKER")
-                logging.info("Emailed error to Andy. Return code and message:"
-                    "\n{0}: {1}".format(return_code, return_message))
 
             else:
                 logging.info("FITSCHECKER finished on {0} with output:\n{1}"\
@@ -579,16 +582,10 @@ if __name__ == "__main__":
                             Robot.
                             """.format(num_lines, fitschecker_log_filename, ", ".join(folder["owners"])))
 
-                        logging.debug("Sending the following email to {0}:\n{2}\n"
-                            "With attachment {3}".format(
-                                ", ".join(GES_ADMINISTRATORS),
-                                contents, fitschecker_log_filename))
-
                         return_code, return_message = email_report(
                             GES_ADMINISTRATORS, contents,
                             attachments=[fitschecker_log_filename])
-                        logging.info("Email return code and message was {0} {1}"\
-                            .format(return_code, return_message))
+
                         break
 
                     # Copy this log file to the correct path
@@ -653,17 +650,8 @@ if __name__ == "__main__":
                     ", ".join([_.split(" <")[0] for _ in folder["owners"]]),
                     invalid_str))
 
-            logging.debug("Sending the following email to {0} (and {1}):\n{2}\n"
-                "With attachments:\n\t{3}".format(
-                    ", ".join(folder["owners"]),
-                    ", ".join(GES_ADMINISTRATORS),
-                    contents,
-                    "\n\t".join(fitschecker_log_filenames)))
-
             return_code, return_message = email_report(folder["owners"], contents,
                 attachments=fitschecker_log_filenames)
-            logging.info("Email return code and message was {0} {1}".format(
-                return_code, return_message))
 
             # Update the existing inventory
             full_inventory[path] = current_inventory
